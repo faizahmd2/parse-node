@@ -236,7 +236,8 @@ def parse_image(path):
                 best = trocr_text
         except Exception as e:
             print("trocr", e)
-    return best
+    # return best
+    return clean_ocr_artifacts(best)
 
 
 def split_by_headers(text: str):
@@ -303,7 +304,27 @@ def _merge_pieces(pieces, chunk_size, overlap, joiner):
 
     return chunks
 
-
+def clean_ocr_artifacts(raw_text: str) -> str:
+    """Removes common structural OCR artifacts (borders, creases, dashed lines)."""
+    lines = raw_text.split('\n')
+    cleaned_lines = []
+    
+    for line in lines:
+        # 1. Strip leading and trailing noise characters (borders, creases)
+        line = re.sub(r'^[\s\|\~\—\}\-\.]+|[\s\|\~\—\}\-\.]+$', '', line)
+        
+        # 2. Remove standalone rogue characters from the middle of the text
+        line = line.replace('|', '').replace('}', '').replace('~', '')
+        
+        # 3. Normalize whitespace (squeeze double spaces into one)
+        line = re.sub(r'\s{2,}', ' ', line)
+        
+        # 4. Only keep lines that contain at least one letter or number
+        # This prevents lines that are just pure noise from making it through
+        if re.search(r'[A-Za-z0-9]', line):
+            cleaned_lines.append(line.strip())
+            
+    return '\n'.join(cleaned_lines)
 
 @app.post("/parse")
 def parse_file(req: ParseRequest):
