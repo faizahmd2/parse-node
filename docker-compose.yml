@@ -1,0 +1,39 @@
+services:
+
+  python-service:
+
+    build: ./python-service
+
+    environment:
+      PYTHONUNBUFFERED: 1
+      TRANSFORMERS_OFFLINE: 1
+      HF_DATASETS_OFFLINE: 1
+
+    volumes:
+      - uploads_tmp:/app/uploads
+
+    mem_limit: 7500m
+
+  node-backend:
+
+    build: ./node-backend
+
+    ports:
+      - "2912:2912"
+
+    env_file:
+      - .env
+
+    environment:
+      NODE_OPTIONS: --max-old-space-size=512
+
+    volumes:
+      - uploads_tmp:/app/uploads
+
+    depends_on:
+      - python-service
+
+    mem_limit: 1024m
+
+volumes:
+  uploads_tmp:
