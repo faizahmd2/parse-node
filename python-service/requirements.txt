@@ -1,15 +1,8 @@
 fastapi
 uvicorn
 markitdown[docx,pptx]
-
-sentence-transformers
 transformers
-
-beautifulsoup4
 pydantic
-numpy
-python-multipart
-accelerate
 
 PyMuPDF
 pypdf

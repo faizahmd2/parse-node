@@ -2,8 +2,8 @@ const { Worker } = require('bullmq');
 const path = require('path');
 const connection = require('../queue/connection');
 const { updateJobStatus } = require('../db/jobsRepo');
-const { createDocument, insertChunks } = require('../db/documentsRepo');
-const { parseFile, chunkText, embedTexts } = require('../services/pythonService');
+const { createDocument, updateDocumentMarkdown } = require('../db/documentsRepo');
+const { parseFile, formatMarkdown } = require('../services/pythonService');
 const fs = require('fs');
 
 const worker = new Worker(
@@ -16,6 +16,7 @@ const worker = new Worker(
     await updateJobStatus(jobId, { status: 'processing', stage: 'parsing', progress: 25 });
     const absolutePath = path.resolve(filePath);
     console.log(`Parsing file at: ${absolutePath}`,fs.existsSync(absolutePath) ? 'File exists' : 'File does not exist');
+    
     const markdown = await parseFile(absolutePath);
     if(!markdown) {
       throw new Error('Parsing failed - no content returned');
@@ -26,30 +27,18 @@ const worker = new Worker(
     // Save document
     const doc = await createDocument({ jobId, filename, content: markdown });
 
-    // Stage 2: Chunk
-    // all-MiniLM-L6-v2 truncates anything past 256 word-pieces (~1000-1100 chars).
-    // Chunks bigger than that just lose their tail silently during embedding,
-    // so 900 chars (~210 tokens) leaves margin while keeping chunks as large as possible.
-    await updateJobStatus(jobId, { stage: 'chunking', progress: 50 });
-    const CHUNK_SIZE = 900;
-    const chunks = await chunkText(markdown, CHUNK_SIZE);
-    console.log(`Chunked into ${chunks.length} pieces`);
-
-    if (chunks.length === 0) {
-      throw new Error('No content extracted - chunking returned empty');
+    await updateJobStatus(jobId, { stage: 'created', progress: 50 });
+    
+    const formatResult = await formatMarkdown(markdown, filename).catch((err) => {
+      console.error(`Job ${jobId}: markdown formatting request failed:`, err.message);
+      return { markdown: null, verified: false, reason: 'request_failed' };
+    });
+    
+    if (formatResult.verified && formatResult.markdown) {
+      await updateDocumentMarkdown(doc.id, formatResult.markdown);
+    } else {
+      console.warn(`Job ${jobId}: no formatted markdown stored (${formatResult.reason || 'unknown'})`);
     }
-
-    // Stage 3: Embed
-    await updateJobStatus(jobId, { stage: 'embedding', progress: 75 });
-    const embeddings = await embedTexts(chunks);
-    console.log(`Generated embeddings for ${embeddings.length} chunks`);
-
-    // Combine and store
-    const chunksWithEmbeddings = chunks.map((content, i) => ({
-      content,
-      embedding: embeddings[i],
-    }));
-    await insertChunks(doc.id, chunksWithEmbeddings);
 
     // Done
     await updateJobStatus(jobId, { status: 'done', stage: 'complete', progress: 100 });
@@ -59,7 +48,7 @@ const worker = new Worker(
       fs.unlinkSync(absolutePath)
     }
 
-    return { success: true, chunkCount: chunks.length };
+    return { success: true };
   },
   { connection, concurrency: 1 }
 );

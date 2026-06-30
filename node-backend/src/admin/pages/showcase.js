@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
+import DocumentViewerModal from './outputModal';
 
 const REFRESH_INTERVAL = 30;
 
@@ -18,18 +19,7 @@ export default function Showcase() {
   const [dragging, setDragging] = useState(false);
   const [jobs, setJobs] = useState([]);
   const [uploadError, setUploadError] = useState('');
-
-  // Message routing
-  const [apiKey, setApiKey] = useState('');
-  const [channel, setChannel] = useState('email');
-  const [msgForm, setMsgForm] = useState({ from: '', subject: '', body: '' });
-  const [msgResult, setMsgResult] = useState(null);
-  const [msgLoading, setMsgLoading] = useState(false);
-
-  // Search
-  const [query, setQuery] = useState('');
-  const [searchResults, setSearchResults] = useState(null);
-  const [searching, setSearching] = useState(false);
+  const [viewingJobId, setViewingJobId] = useState(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -88,41 +78,6 @@ export default function Showcase() {
     Array.from(e.dataTransfer.files).forEach(uploadFile);
   }
 
-  async function sendMessage() {
-    if (!msgForm.body || !apiKey) return;
-    setMsgLoading(true); setMsgResult(null);
-    const res = await fetch('/api/message', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
-      body: JSON.stringify({ channel, ...msgForm }),
-    });
-    const data = await res.json();
-    if (!res.ok) { setMsgResult({ error: data.error }); setMsgLoading(false); return; }
-
-    let attempts = 0;
-    const poll = setInterval(async () => {
-      attempts++;
-      const r = await fetch(`/api/message/${data.messageId}`, { headers: { 'X-API-Key': apiKey } });
-      const msg = await r.json();
-      if (msg.status === 'done' || msg.status === 'failed' || attempts > 30) {
-        clearInterval(poll); setMsgResult(msg); setMsgLoading(false);
-      }
-    }, 1500);
-  }
-
-  async function doSearch() {
-    if (!query.trim()) return;
-    setSearching(true); setSearchResults(null);
-    const res = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query }),
-    });
-    const data = await res.json();
-    setSearchResults(data.results || []);
-    setSearching(false);
-  }
-
   function stageColor(status) {
     if (status === 'done') return '#16a34a';
     if (status === 'failed') return '#dc2626';
@@ -175,7 +130,7 @@ export default function Showcase() {
             <div className="sw-section-num">01</div>
             <div>
               <h2>Document Ingestion</h2>
-              <p>Upload a file — including scanned or handwritten images. It enters a distributed queue, gets parsed (MarkItDown for documents, OCR for images), split into semantic chunks, and embedded into pgvector for search. Extracted text is downloadable as soon as parsing finishes.</p>
+              <p>Upload a file</p>
             </div>
           </div>
 
@@ -209,9 +164,14 @@ export default function Showcase() {
                     </span>
                     <span style={{ fontSize: 12, color: '#64748b' }}>{j.progress || 0}%</span>
                     {j.hasText && (
-                      <button className="sw-download-btn" onClick={() => downloadExtractedText(j.jobId)}>
-                        ⬇ Text
-                      </button>
+                      <>
+                        <button className="sw-view-btn" onClick={() => setViewingJobId(j.jobId)}>
+                          👁 View
+                        </button>
+                        <button className="sw-download-btn" onClick={() => downloadExtractedText(j.jobId)}>
+                          ⬇ Text
+                        </button>
+                      </>
                     )}
                   </div>
                   <div className="sw-bar-bg">
@@ -225,135 +185,11 @@ export default function Showcase() {
             </div>
           )}
         </div>
-
-        {/* SECTION 2: SEMANTIC SEARCH */}
-        <div className="sw-section">
-          <div className="sw-section-head">
-            <div className="sw-section-num">02</div>
-            <div>
-              <h2>Semantic Search</h2>
-              <p>Query the vector store using natural language. Results are ranked by cosine similarity — finds meaning, not just keywords.</p>
-            </div>
-          </div>
-
-          <div className="sw-inline">
-            <input
-              className="sw-input"
-              placeholder="e.g. backend development experience with Node.js..."
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && doSearch()}
-            />
-            <button className="sw-btn" onClick={doSearch} disabled={searching}>
-              {searching ? 'Searching...' : 'Search'}
-            </button>
-          </div>
-
-          {searchResults && searchResults.length === 0 && (
-            <div className="sw-empty">No results. Try uploading a document first.</div>
-          )}
-
-          {searchResults && searchResults.map((r, i) => (
-            <div key={i} className="sw-result">
-              <div className="sw-result-meta">
-                <span className="sw-result-file">{r.filename}</span>
-                <span className="sw-result-score">{(r.similarity * 100).toFixed(1)}% match</span>
-              </div>
-              <p>{r.content.substring(0, 250)}{r.content.length > 250 ? '...' : ''}</p>
-            </div>
-          ))}
-        </div>
-
-        {/* SECTION 3: MESSAGE ROUTING */}
-        <div className="sw-section">
-          <div className="sw-section-head">
-            <div className="sw-section-num">03</div>
-            <div>
-              <h2>Intelligent Message Routing</h2>
-              <p>Submit a message from any channel. The AI classifier determines intent and urgency using your client's taxonomy, then routes to the configured destination.</p>
-            </div>
-          </div>
-
-          <div className="sw-field">
-            <label>API Key <span>(from admin dashboard → client)</span></label>
-            <input className="sw-input" placeholder="key_..."
-              value={apiKey} onChange={e => setApiKey(e.target.value)} />
-          </div>
-
-          <div className="sw-field">
-            <label>Channel</label>
-            <div className="sw-channels">
-              {['email', 'sms', 'whatsapp', 'custom'].map(c => (
-                <button key={c}
-                  className={`sw-channel ${channel === c ? 'active' : ''}`}
-                  onClick={() => setChannel(c)}>
-                  {c.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="sw-field">
-            <label>From</label>
-            <input className="sw-input" placeholder="sender@example.com or +91..."
-              value={msgForm.from} onChange={e => setMsgForm({ ...msgForm, from: e.target.value })} />
-          </div>
-
-          {channel === 'email' && (
-            <div className="sw-field">
-              <label>Subject</label>
-              <input className="sw-input" placeholder="Email subject..."
-                value={msgForm.subject} onChange={e => setMsgForm({ ...msgForm, subject: e.target.value })} />
-            </div>
-          )}
-
-          <div className="sw-field">
-            <label>Message Body</label>
-            <textarea className="sw-textarea" rows={4}
-              placeholder="Type the message content here..."
-              value={msgForm.body} onChange={e => setMsgForm({ ...msgForm, body: e.target.value })} />
-          </div>
-
-          <button className="sw-btn full" onClick={sendMessage}
-            disabled={msgLoading || !msgForm.body || !apiKey}>
-            {msgLoading ? 'Classifying and routing...' : 'Submit Message →'}
-          </button>
-
-          {msgResult && !msgResult.error && (
-            <div className="sw-msg-result">
-              <div className="sw-msg-row">
-                <span className="sw-msg-label">Category</span>
-                <span className="sw-msg-val">{msgResult.classification?.category || '—'}</span>
-                <span className="sw-msg-conf">
-                  {msgResult.classification?.category_confidence
-                    ? `${(msgResult.classification.category_confidence * 100).toFixed(0)}% confidence`
-                    : ''}
-                </span>
-              </div>
-              <div className="sw-msg-row">
-                <span className="sw-msg-label">Urgency</span>
-                <span className={`sw-msg-val ${msgResult.classification?.urgency === 'high' ? 'high' : ''}`}>
-                  {msgResult.classification?.urgency || '—'}
-                </span>
-                <span className="sw-msg-conf">
-                  {msgResult.classification?.urgency_confidence
-                    ? `${(msgResult.classification.urgency_confidence * 100).toFixed(0)}% confidence`
-                    : ''}
-                </span>
-              </div>
-              <div className="sw-msg-row">
-                <span className="sw-msg-label">Status</span>
-                <span className={`sw-msg-val ${msgResult.routing_status === 'sent' ? 'sent' : ''}`}>
-                  {msgResult.routing_status || msgResult.status}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {msgResult?.error && <div className="sw-alert">{msgResult.error}</div>}
-        </div>
-
       </div>
+
+      {viewingJobId && (
+        <DocumentViewerModal jobId={viewingJobId} onClose={() => setViewingJobId(null)} />
+      )}
     </div>
   );
 }

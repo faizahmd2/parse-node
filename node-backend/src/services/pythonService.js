@@ -8,24 +8,10 @@ async function parseFile(filePath) {
   return res.data.markdown;
 }
 
-async function chunkText(text, chunkSize = 500) {
-  const res = await axios.post(`${PYTHON_SERVICE_URL}/chunk`, { text, chunk_size: chunkSize });
-  return res.data.chunks;
+async function formatMarkdown(text, filename = '') {
+  // return {verified: true, markdown: text} // for temp
+  const res = await axios.post(`${PYTHON_SERVICE_URL}/format`, { text, filename });
+  return res.data; // { markdown, verified, reason?, missing_tokens? }
 }
 
-async function embedTexts(texts) {
-  const res = await axios.post(`${PYTHON_SERVICE_URL}/embed`, { texts });
-  return res.data.embeddings;
-}
-
-async function preprocessEmail({ subject, body, fromAddress, clientSeeds = [] }) {
-  const res = await axios.post(`${PYTHON_SERVICE_URL}/preprocess`, {
-    subject,
-    body,
-    from_address: fromAddress,
-    client_seeds: clientSeeds,
-  });
-  return res.data;
-}
-
-module.exports = { parseFile, chunkText, embedTexts, preprocessEmail };
+module.exports = { parseFile, formatMarkdown };

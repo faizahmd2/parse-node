@@ -4,15 +4,26 @@ services:
 
     build: ./python-service
 
+    env_file:
+      - .env
+
     environment:
       PYTHONUNBUFFERED: 1
       TRANSFORMERS_OFFLINE: 1
       HF_DATASETS_OFFLINE: 1
+      # Caps thread pools used by torch/cv2/numpy's BLAS backend. Without this,
+      # OCR/embedding calls spin up threads across every core, which is what
+      # makes a MacBook's fans spin up during a demo. Bump these (or remove
+      # the cpus limit below) if you ever run this on a beefier machine.
+      OMP_NUM_THREADS: 2
+      MKL_NUM_THREADS: 2
+      OPENBLAS_NUM_THREADS: 2
 
     volumes:
       - uploads_tmp:/app/uploads
 
     mem_limit: 7500m
+    cpus: 3
 
   node-backend:
 
