@@ -5,9 +5,6 @@ transformers
 pydantic
 
 PyMuPDF
-pypdf
-pdf2image
-pytesseract
 pillow
 
 opencv-python-headless
